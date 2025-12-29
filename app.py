@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from io import BytesIO
 from typing import Optional, List, Tuple
+from zoneinfo import ZoneInfo
 
 import streamlit as st
 from PIL import Image, ImageDraw, ImageFont
@@ -263,7 +264,7 @@ def render_dashboard_png(state: State) -> Image.Image:
 
 
     # --- 타이틀 ---
-    now = datetime.now()
+    now = datetime.now(ZoneInfo("Asia/Seoul"))
     title = f"{now.month}/{now.day} {TITLE_SUFFIX}"
     draw.text((pad, pad), title, fill=hex_to_rgb("#2F6DF6"), font=font_title)
     draw.rectangle([pad, pad + 34, W - pad, pad + 38], fill=hex_to_rgb("#2F6DF6"))
@@ -575,7 +576,8 @@ st.download_button(
 # ===== 복사용 텍스트 =====
 st.subheader("복사용 텍스트")
 lines = []
-lines.append(f"{datetime.now().month}/{datetime.now().day} {TITLE_SUFFIX}")
+now = datetime.now(ZoneInfo("Asia/Seoul"))
+lines.append(f"{now.month}/{now.day} {TITLE_SUFFIX}")
 lines.append("")
 actions_txt = [a for a in current.actions if a.strip()]
 if actions_txt:
