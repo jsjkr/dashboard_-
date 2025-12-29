@@ -496,7 +496,6 @@ st.subheader("Action(요약)")
 for i in range(2):
     st.text_input(
         f"Action {i+1}",
-        value=st.session_state.actions[i],
         key=f"action_{i}",
         on_change=persist,
     )
@@ -507,7 +506,6 @@ with st.expander("Action 3~4 (펼치기)", expanded=False):
     for i in range(2, 4):
         st.text_input(
             f"Action {i+1}",
-            value=st.session_state.actions[i],
             key=f"action_{i}",
             on_change=persist,
         )
