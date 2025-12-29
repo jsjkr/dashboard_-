@@ -388,6 +388,27 @@ html, body, [class*="css"]  {
     unsafe_allow_html=True,
 )
 
+# 세션 상태에 폼 키 세팅(한 번만)
+def ensure_session_keys():
+    if "actions" not in st.session_state:
+        st.session_state.actions = init_state.actions[:]
+
+    if "rows" not in st.session_state:
+        rows4 = init_state.rows[:]
+        while len(rows4) < 4:
+            rows4.append(Row(name="", pct=0.0, rule=""))
+        rows4 = rows4[:4]
+        st.session_state.rows = [asdict(r) for r in rows4]
+
+    # ✅ 위젯 키 초기화(이게 있어야 위젯이 "actions/rows"와 동기화됨)
+    for i in range(4):
+        st.session_state.setdefault(f"action_{i}", st.session_state.actions[i])
+
+    for i in range(4):
+        st.session_state.setdefault(f"name_{i}", st.session_state.rows[i]["name"])
+        st.session_state.setdefault(f"pct_{i}", float(st.session_state.rows[i]["pct"]))
+        st.session_state.setdefault(f"rule_{i}", st.session_state.rows[i]["rule"])
+
 require_login()
 ensure_session_keys()
 localS = LocalStorage()
@@ -415,26 +436,7 @@ init_state = st.session_state.loaded_state if st.session_state.loaded_state is n
     rows=default_rows,
 )
 
-# 세션 상태에 폼 키 세팅(한 번만)
-def ensure_session_keys():
-    if "actions" not in st.session_state:
-        st.session_state.actions = init_state.actions[:]
 
-    if "rows" not in st.session_state:
-        rows4 = init_state.rows[:]
-        while len(rows4) < 4:
-            rows4.append(Row(name="", pct=0.0, rule=""))
-        rows4 = rows4[:4]
-        st.session_state.rows = [asdict(r) for r in rows4]
-
-    # ✅ 위젯 키 초기화(이게 있어야 위젯이 "actions/rows"와 동기화됨)
-    for i in range(4):
-        st.session_state.setdefault(f"action_{i}", st.session_state.actions[i])
-
-    for i in range(4):
-        st.session_state.setdefault(f"name_{i}", st.session_state.rows[i]["name"])
-        st.session_state.setdefault(f"pct_{i}", float(st.session_state.rows[i]["pct"]))
-        st.session_state.setdefault(f"rule_{i}", st.session_state.rows[i]["rule"])
 
 
 # 저장 콜백: 입력이 바뀔 때마다 localStorage 갱신
