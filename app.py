@@ -389,7 +389,7 @@ html, body, [class*="css"]  {
 )
 
 require_login()
-
+ensure_session_keys()
 localS = LocalStorage()
 
 # 1) 첫 진입 시 localStorage에서 상태 로드(있으면)
@@ -419,6 +419,7 @@ init_state = st.session_state.loaded_state if st.session_state.loaded_state is n
 def ensure_session_keys():
     if "actions" not in st.session_state:
         st.session_state.actions = init_state.actions[:]
+
     if "rows" not in st.session_state:
         rows4 = init_state.rows[:]
         while len(rows4) < 4:
@@ -426,11 +427,29 @@ def ensure_session_keys():
         rows4 = rows4[:4]
         st.session_state.rows = [asdict(r) for r in rows4]
 
-ensure_session_keys()
+    # ✅ 위젯 키 초기화(이게 있어야 위젯이 "actions/rows"와 동기화됨)
+    for i in range(4):
+        st.session_state.setdefault(f"action_{i}", st.session_state.actions[i])
+
+    for i in range(4):
+        st.session_state.setdefault(f"name_{i}", st.session_state.rows[i]["name"])
+        st.session_state.setdefault(f"pct_{i}", float(st.session_state.rows[i]["pct"]))
+        st.session_state.setdefault(f"rule_{i}", st.session_state.rows[i]["rule"])
+
 
 # 저장 콜백: 입력이 바뀔 때마다 localStorage 갱신
 def persist():
-    rows = [Row(**r) for r in st.session_state.rows]
+    # ✅ 최신값은 위젯 key에서 직접 읽는다
+    actions = [st.session_state.get(f"action_{i}", "") for i in range(4)]
+
+    rows = []
+    for i in range(4):
+        name = (st.session_state.get(f"name_{i}", "") or "").strip()
+        pct  = float(st.session_state.get(f"pct_{i}", 0.0) or 0.0)
+        rule = (st.session_state.get(f"rule_{i}", "") or "")
+        rows.append(Row(name=name, pct=pct, rule=rule))
+
+    # optional 처리: 3,4번은 name/pct/rule 중 뭐라도 들어가면 포함
     final_rows: List[Row] = []
     final_rows.append(rows[0] if rows[0].name.strip() else Row("종목1", rows[0].pct, rows[0].rule))
     final_rows.append(rows[1] if rows[1].name.strip() else Row("종목2", rows[1].pct, rows[1].rule))
@@ -440,8 +459,9 @@ def persist():
         if has_any:
             final_rows.append(Row(r.name.strip() or "종목", r.pct, r.rule))
 
-    state = State(actions=st.session_state.actions[:4], rows=final_rows)
+    state = State(actions=actions[:4], rows=final_rows)
     save_to_local_storage(localS, state)
+
 
 # ===== 입력 UI =====
 st.title("대시보드")
@@ -450,22 +470,24 @@ st.subheader("Action(요약)")
 
 # Action 1~2 (항상 표시)
 for i in range(2):
-    st.session_state.actions[i] = st.text_input(
+    st.text_input(
         f"Action {i+1}",
         value=st.session_state.actions[i],
         key=f"action_{i}",
         on_change=persist,
     )
 
+
 # Action 3~4 (접기)
 with st.expander("Action 3~4 (펼치기)", expanded=False):
     for i in range(2, 4):
-        st.session_state.actions[i] = st.text_input(
+        st.text_input(
             f"Action {i+1}",
             value=st.session_state.actions[i],
             key=f"action_{i}",
             on_change=persist,
         )
+
 
 st.subheader("종목 입력 (비중은 숫자만)")
 
@@ -488,8 +510,6 @@ def row_editor(i: int, optional: bool):
     )
     rule = c3.text_input(rule_label, value=r["rule"], key=f"rule_{i}", on_change=persist)
 
-    st.session_state.rows[i] = {"name": name, "pct": float(pct_num), "rule": rule}
-
 row_editor(0, optional=False)
 row_editor(1, optional=False)
 
@@ -498,7 +518,13 @@ with st.expander("종목 3~4 (선택) 입력 펼치기", expanded=False):
     row_editor(3, optional=True)
 
 # 현재 상태 구성
-rows_all = [Row(**r) for r in st.session_state.rows]
+rows_all: List[Row] = []
+for i in range(4):
+    name = (st.session_state.get(f"name_{i}", "") or "").strip()
+    pct  = float(st.session_state.get(f"pct_{i}", 0.0) or 0.0)
+    rule = (st.session_state.get(f"rule_{i}", "") or "")
+    rows_all.append(Row(name=name, pct=pct, rule=rule))
+
 final_rows: List[Row] = []
 final_rows.append(rows_all[0] if rows_all[0].name.strip() else Row("종목1", rows_all[0].pct, rows_all[0].rule))
 final_rows.append(rows_all[1] if rows_all[1].name.strip() else Row("종목2", rows_all[1].pct, rows_all[1].rule))
