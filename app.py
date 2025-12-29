@@ -315,7 +315,7 @@ def render_dashboard_png(state: State) -> Image.Image:
         draw.text((int(tx1), int(y_line)), ln, fill=(0, 0, 0), font=font)
 
     # --- 테이블 헤더 ---
-    col_w = [220, 200, 140, 150, W - pad * 2 - (220 + 180 + 140 + 200)]
+    col_w = [220, 200, 140, 150, W - pad * 2 - (220 + 200 + 140 + 150)]
     headers = ["종목", "시각화", "비중변경", "ACTION", "매수/매도 기준"]
     x = pad
     y = table_top
