@@ -205,6 +205,7 @@ def render_dashboard_png(state: State) -> Image.Image:
         bold_path = os.path.join(base, "assets", "NanumGothicBold.ttf")
         font_title = ImageFont.truetype(bold_path, 28)   # 타이틀
         font_h     = ImageFont.truetype(bold_path, 22)   # 헤더/강조
+        font_rule  = ImageFont.truetype(bold_path, 18)
         font       = ImageFont.truetype(reg_path, 18)    # 일반 텍스트
         return font_title, font_h, font
 
@@ -217,7 +218,7 @@ def render_dashboard_png(state: State) -> Image.Image:
         except Exception:
             return None
 
-    font_title, font_h, font = load_korean_fonts()
+    font_title, font_h, font_rule, font = load_korean_fonts()
     icon_img = load_icon()
 
     # --- ACTION 박스 높이: 입력 줄 수(0~4) 기반 ---
@@ -341,13 +342,16 @@ def render_dashboard_png(state: State) -> Image.Image:
         # 종목(중앙)
         draw_center_text((pad, y, pad + col_w[0], y + row_h), r.name, font_h, fill=(0, 0, 0))
 
-        # 시각화 바(행 세로 중앙)
-        bx1 = pad + col_w[0] + 30
-        bw = 200
+        # 시각화 바(행 세로 중앙) - ✅ 칼럼 폭에 맞춰 자동 조정(겹침 방지)
+        left_pad = 30
+        right_pad = 20
+        bx1 = pad + col_w[0] + left_pad
+        bw = max(60, col_w[1] - (left_pad + right_pad))  # ✅ col_w[1]에 맞춰 폭 자동
         bh = 26
-        by1 = y + (row_h - bh) // 2  # ✅ 중앙
+        by1 = y + (row_h - bh) // 2
         draw.rectangle([bx1, by1, bx1 + bw, by1 + bh], fill=hex_to_rgb("#DADADA"))
         draw.rectangle([bx1, by1, bx1 + int(bw * ratio), by1 + bh], fill=bar_color)
+
 
         # 비중변경(중앙)
         x1 = pad + col_w[0] + col_w[1]
@@ -360,7 +364,7 @@ def render_dashboard_png(state: State) -> Image.Image:
 
         # 기준(중앙)
         x_rule = pad + col_w[0] + col_w[1] + col_w[2] + col_w[3]
-        draw_center_text((x_rule, y, x_rule + col_w[4], y + row_h), (r.rule or ""), font_h, fill=(0, 0, 0))
+        draw_center_text((x_rule, y, x_rule + col_w[4], y + row_h), (r.rule or ""), font_rule, fill=(0, 0, 0))
 
         y += row_h
 
