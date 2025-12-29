@@ -5,12 +5,12 @@ import json
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from io import BytesIO
-from typing import Optional, List, Tuple
+from typing import Optional, List
 from zoneinfo import ZoneInfo
+import os
 
 import streamlit as st
 from PIL import Image, ImageDraw, ImageFont
-
 from streamlit_local_storage import LocalStorage
 
 
@@ -51,18 +51,6 @@ def hex_to_rgb(h: str):
     return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
 
 
-def parse_pct(s: str) -> Optional[float]:
-    if s is None:
-        return None
-    s = s.strip().replace("%", "")
-    if not s:
-        return None
-    try:
-        return float(s)
-    except ValueError:
-        return None
-
-
 def pct_to_ratio(pct: float) -> float:
     return max(0.0, min(1.0, abs(pct) / 100.0))
 
@@ -88,7 +76,6 @@ def bar_color_from_sign(pct: float) -> str:
 
 
 def format_pct_text(pct: float) -> str:
-    # 숫자만 입력받는 조건이므로 표시는 +/-
     return f"- {abs(pct):g}%" if pct < 0 else f"+ {pct:g}%"
 
 
@@ -134,9 +121,11 @@ def json_to_state(s: str) -> Optional[State]:
         rows_obj = obj.get("rows", [])
         if not isinstance(actions, list) or not isinstance(rows_obj, list):
             return None
+
         actions = [(x if isinstance(x, str) else "") for x in actions][:4]
         while len(actions) < 4:
             actions.append("")
+
         rows: List[Row] = []
         for r in rows_obj:
             if not isinstance(r, dict):
@@ -149,6 +138,7 @@ def json_to_state(s: str) -> Optional[State]:
                 pct = 0.0
             rule = str(r.get("rule", "") or "")
             rows.append(Row(name=name, pct=pct, rule=rule))
+
         if len(rows) < 2:
             return None
         rows = rows[:4]
@@ -191,40 +181,35 @@ def save_to_local_storage(localS: LocalStorage, state: State):
 # PNG 렌더링(PIL)
 # =========================
 def render_dashboard_png(state: State) -> Image.Image:
-    import os
-
     W = 980
     pad = 24
     row_h = 54
     header_h = 56
     top_title_h = 54
 
-    # --- 폰트 로드 먼저(레이아웃 계산 정확도를 위해) ---
     def load_korean_fonts():
         base = os.path.dirname(os.path.abspath(__file__))
         reg_path = os.path.join(base, "assets", "NanumGothic.ttf")
         bold_path = os.path.join(base, "assets", "NanumGothicBold.ttf")
-        font_title = ImageFont.truetype(bold_path, 28)   # 타이틀
-        font_h     = ImageFont.truetype(bold_path, 22)   # 헤더/강조
+        font_title = ImageFont.truetype(bold_path, 28)
+        font_h     = ImageFont.truetype(bold_path, 22)
         font_rule  = ImageFont.truetype(bold_path, 18)
-        font       = ImageFont.truetype(reg_path, 18)    # 일반 텍스트
+        font       = ImageFont.truetype(reg_path, 18)
         return font_title, font_h, font_rule, font
 
     def load_icon():
         base = os.path.dirname(os.path.abspath(__file__))
         icon_path = os.path.join(base, "assets", "megaphone.png")
         try:
-            icon = Image.open(icon_path).convert("RGBA")
-            return icon
+            return Image.open(icon_path).convert("RGBA")
         except Exception:
             return None
 
     font_title, font_h, font_rule, font = load_korean_fonts()
     icon_img = load_icon()
 
-    # --- ACTION 박스 높이: 입력 줄 수(0~4) 기반 ---
+    # ACTION 박스 높이
     action_lines = [a for a in state.actions if a.strip()]
-    # 기본은 2줄, 3개면 3줄, 4개면 4줄
     n_lines = len(action_lines)
     n_lines_for_height = 2 if n_lines <= 2 else min(4, n_lines)
 
@@ -232,9 +217,9 @@ def render_dashboard_png(state: State) -> Image.Image:
     line_h = ascent + descent
     spacing = 6
     text_h = n_lines_for_height * line_h + (n_lines_for_height - 1) * spacing
-    action_box_h = max(60, text_h + 20)  # 위아래 패딩 포함
+    action_box_h = max(60, text_h + 20)
 
-    # --- table_top/H 계산은 action_box_h 확정 후 ---
+    # 테이블 위치/이미지 높이
     n_rows = len(state.rows)
     table_top = pad + top_title_h + action_box_h + 24
     H = table_top + header_h + row_h * n_rows + pad
@@ -242,42 +227,33 @@ def render_dashboard_png(state: State) -> Image.Image:
     img = Image.new("RGB", (W, H), (255, 255, 255))
     draw = ImageDraw.Draw(img)
 
-    # --- 정수 좌표 기반 중앙정렬(미세 어긋남 방지) ---
     def draw_center_text(box, text, font_, fill=(0, 0, 0)):
         x1, y1, x2, y2 = box
-        if text is None:
-            text = ""
-        text = str(text)
-    
-        # 가로폭은 bbox로 정확히
+        text = "" if text is None else str(text)
+
         bbox = draw.textbbox((0, 0), text, font=font_)
         tw = bbox[2] - bbox[0]
-    
-        # ✅ 세로는 bbox가 아니라 "폰트 라인 높이"로 통일 (광학적으로 더 안정적)
-        ascent, descent = font_.getmetrics()
-        line_h = ascent + descent
-    
+
+        a, d = font_.getmetrics()
+        lh = a + d
+
         x = x1 + (x2 - x1 - tw) / 2
-        y = y1 + (y2 - y1 - line_h) / 2
-    
+        y = y1 + (y2 - y1 - lh) / 2
         draw.text((int(round(x)), int(round(y))), text, fill=fill, font=font_)
 
-
-    # --- 타이틀 ---
+    # 타이틀(서울시간 고정)
     now = datetime.now(ZoneInfo("Asia/Seoul"))
     title = f"{now.month}/{now.day} {TITLE_SUFFIX}"
     draw.text((pad, pad), title, fill=hex_to_rgb("#2F6DF6"), font=font_title)
     draw.rectangle([pad, pad + 34, W - pad, pad + 38], fill=hex_to_rgb("#2F6DF6"))
 
-    # --- ACTION 박스 ---
+    # ACTION 박스
     ax1, ay1 = pad, pad + 52
     ax2, ay2 = W - pad, ay1 + action_box_h
     draw.rectangle([ax1, ay1, ax2, ay2], outline=hex_to_rgb("#E66A6A"), width=3)
 
-    # 아이콘 + "ACTION!" 텍스트(좌측)
     icon_x = ax1 + 14
     icon_size = 24
-    # 박스 세로 중앙
     icon_y = ay1 + (action_box_h - icon_size) // 2
 
     text_x = icon_x
@@ -288,26 +264,14 @@ def render_dashboard_png(state: State) -> Image.Image:
         img.paste(icon_resized, (int(icon_x), int(icon_y)), icon_resized)
         text_x += icon_size + 8
 
-    draw.text(
-        (int(text_x), int(text_y)),
-        "ACTION!",
-        fill=hex_to_rgb("#E53935"),
-        font=font_h
-    )
+    draw.text((int(text_x), int(text_y)), "ACTION!", fill=hex_to_rgb("#E53935"), font=font_h)
 
-    # ACTION 내용: 좌측 정렬 + 전체 블록 세로 중앙
-    # 표시 줄 수 = n_lines_for_height (2/3/4)
+    # ACTION 내용(좌측 정렬 + 블록 세로 중앙)
     show_lines = action_lines[:n_lines_for_height]
-    # 줄이 부족하면 빈줄로 채워서(2줄 기본 유지)
     while len(show_lines) < n_lines_for_height:
         show_lines.append("")
 
-    # 텍스트 시작 x(좌측부터)
     tx1 = ax1 + 160
-
-    # 전체 블록 높이 계산해서 박스 중앙에 오게 배치
-    nonempty = [ln for ln in show_lines if ln.strip() != ""]
-    # 빈줄도 높이는 차지해야 하므로 "줄 수"로 계산
     block_h = n_lines_for_height * line_h + (n_lines_for_height - 1) * spacing
     start_y = ay1 + (action_box_h - block_h) // 2
 
@@ -315,9 +279,10 @@ def render_dashboard_png(state: State) -> Image.Image:
         y_line = start_y + i * (line_h + spacing)
         draw.text((int(tx1), int(y_line)), ln, fill=(0, 0, 0), font=font)
 
-    # --- 테이블 헤더 ---
+    # 테이블 헤더
     col_w = [220, 200, 140, 150, W - pad * 2 - (220 + 200 + 140 + 150)]
     headers = ["종목", "시각화", "비중변경", "ACTION", "매수/매도 기준"]
+
     x = pad
     y = table_top
     for i, h in enumerate(headers):
@@ -325,7 +290,7 @@ def render_dashboard_png(state: State) -> Image.Image:
         draw_center_text((x, y, x + col_w[i], y + header_h), h, font_h, fill=(30, 30, 30))
         x += col_w[i]
 
-    # --- 행 ---
+    # 행
     y += header_h
     for r in state.rows:
         ratio = pct_to_ratio(r.pct)
@@ -334,36 +299,35 @@ def render_dashboard_png(state: State) -> Image.Image:
         action_bg = hex_to_rgb(action_bg_from_sign(r.pct))
         pct_text = format_pct_text(r.pct)
 
-        # 기본 배경(각 칸)
+        # 배경
         x = pad
         for w in col_w:
             draw.rectangle([x, y, x + w, y + row_h], fill=hex_to_rgb("#F4F4F4"))
             x += w
 
-        # 종목(중앙)
+        # 종목
         draw_center_text((pad, y, pad + col_w[0], y + row_h), r.name, font_h, fill=(0, 0, 0))
 
-        # 시각화 바(행 세로 중앙) - ✅ 칼럼 폭에 맞춰 자동 조정(겹침 방지)
+        # 시각화 바(칼럼 폭 자동)
         left_pad = 30
         right_pad = 20
         bx1 = pad + col_w[0] + left_pad
-        bw = max(60, col_w[1] - (left_pad + right_pad))  # ✅ col_w[1]에 맞춰 폭 자동
+        bw = max(60, col_w[1] - (left_pad + right_pad))
         bh = 26
         by1 = y + (row_h - bh) // 2
         draw.rectangle([bx1, by1, bx1 + bw, by1 + bh], fill=hex_to_rgb("#DADADA"))
         draw.rectangle([bx1, by1, bx1 + int(bw * ratio), by1 + bh], fill=bar_color)
 
-
-        # 비중변경(중앙)
+        # 비중변경
         x1 = pad + col_w[0] + col_w[1]
         draw_center_text((x1, y, x1 + col_w[2], y + row_h), pct_text, font_h, fill=(0, 0, 0))
 
-        # ACTION 셀 배경 + 텍스트 중앙
+        # ACTION
         ax = pad + col_w[0] + col_w[1] + col_w[2]
         draw.rectangle([ax, y, ax + col_w[3], y + row_h], fill=action_bg)
         draw_center_text((ax, y, ax + col_w[3], y + row_h), action, font_h, fill=(0, 0, 0))
 
-        # 기준(중앙)
+        # 기준
         x_rule = pad + col_w[0] + col_w[1] + col_w[2] + col_w[3]
         draw_center_text((x_rule, y, x_rule + col_w[4], y + row_h), (r.rule or ""), font_rule, fill=(0, 0, 0))
 
@@ -390,16 +354,14 @@ html, body, [class*="css"]  {
 )
 
 require_login()
-
 localS = LocalStorage()
 
-# 1) 첫 진입 시 localStorage에서 상태 로드(있으면)
+# 1) 최초 1회만 localStorage에서 상태 로드
 if "initialized" not in st.session_state:
     st.session_state.initialized = True
-    loaded = try_load_from_local_storage(localS)
-    st.session_state.loaded_state = loaded  # None 가능
+    st.session_state.loaded_state = try_load_from_local_storage(localS)
 
-# 기본값(원 코드 동일)
+# 기본값
 default_actions = ["오늘 대응 요약 1", "오늘 대응 요약 2", "", ""]
 default_rows = [
     Row(name="셀트리온제약", pct=-50.0, rule="예: 시장가"),
@@ -413,58 +375,28 @@ init_state = st.session_state.loaded_state if st.session_state.loaded_state is n
     rows=default_rows,
 )
 
-# ✅ init_state 만든 뒤에 session_state 키 초기화
 def ensure_session_keys(init_state: State):
-    if "actions" not in st.session_state:
-        st.session_state.actions = init_state.actions[:]
+    # 내부 저장용(원하면 유지해도 되고, 사실 위젯키만 있어도 됨)
+    st.session_state.setdefault("actions", init_state.actions[:])
 
-    if "rows" not in st.session_state:
-        rows4 = init_state.rows[:]
-        while len(rows4) < 4:
-            rows4.append(Row(name="", pct=0.0, rule=""))
-        rows4 = rows4[:4]
-        st.session_state.rows = [asdict(r) for r in rows4]
+    rows4 = init_state.rows[:]
+    while len(rows4) < 4:
+        rows4.append(Row(name="", pct=0.0, rule=""))
+    rows4 = rows4[:4]
+    st.session_state.setdefault("rows", [asdict(r) for r in rows4])
 
-    # 위젯 키 초기화(동기화)
+    # ✅ 위젯 key는 setdefault로만 초기화 (value= 절대 사용 X)
     for i in range(4):
-        st.session_state.setdefault(f"action_{i}", st.session_state.actions[i])
+        st.session_state.setdefault(f"action_{i}", init_state.actions[i])
 
     for i in range(4):
-        st.session_state.setdefault(f"name_{i}", st.session_state.rows[i]["name"])
-        st.session_state.setdefault(f"pct_{i}", float(st.session_state.rows[i]["pct"]))
-        st.session_state.setdefault(f"rule_{i}", st.session_state.rows[i]["rule"])
+        st.session_state.setdefault(f"name_{i}", rows4[i].name)
+        st.session_state.setdefault(f"pct_{i}", float(rows4[i].pct))
+        st.session_state.setdefault(f"rule_{i}", rows4[i].rule)
 
 ensure_session_keys(init_state)
 
-# 1) 첫 진입 시 localStorage에서 상태 로드(있으면)
-if "initialized" not in st.session_state:
-    st.session_state.initialized = True
-    loaded = try_load_from_local_storage(localS)
-    if loaded is not None:
-        st.session_state.loaded_state = loaded
-    else:
-        st.session_state.loaded_state = None
-
-# 기본값(원 코드 동일)
-default_actions = ["오늘 대응 요약 1", "오늘 대응 요약 2", "", ""]
-default_rows = [
-    Row(name="셀트리온제약", pct=-50.0, rule="예: 시장가"),
-    Row(name="에이비온", pct=50.0, rule="예: 2900 이내 분할"),
-    Row(name="", pct=0.0, rule=""),
-    Row(name="", pct=0.0, rule=""),
-]
-
-init_state = st.session_state.loaded_state if st.session_state.loaded_state is not None else State(
-    actions=default_actions,
-    rows=default_rows,
-)
-
-
-
-
-# 저장 콜백: 입력이 바뀔 때마다 localStorage 갱신
 def persist():
-    # ✅ 최신값은 위젯 key에서 직접 읽는다
     actions = [st.session_state.get(f"action_{i}", "") for i in range(4)]
 
     rows = []
@@ -474,7 +406,6 @@ def persist():
         rule = (st.session_state.get(f"rule_{i}", "") or "")
         rows.append(Row(name=name, pct=pct, rule=rule))
 
-    # optional 처리: 3,4번은 name/pct/rule 중 뭐라도 들어가면 포함
     final_rows: List[Row] = []
     final_rows.append(rows[0] if rows[0].name.strip() else Row("종목1", rows[0].pct, rows[0].rule))
     final_rows.append(rows[1] if rows[1].name.strip() else Row("종목2", rows[1].pct, rows[1].rule))
@@ -484,54 +415,32 @@ def persist():
         if has_any:
             final_rows.append(Row(r.name.strip() or "종목", r.pct, r.rule))
 
-    state = State(actions=actions[:4], rows=final_rows)
-    save_to_local_storage(localS, state)
+    save_to_local_storage(localS, State(actions=actions[:4], rows=final_rows))
 
 
 # ===== 입력 UI =====
 st.title("대시보드")
 
 st.subheader("Action(요약)")
-
-# Action 1~2 (항상 표시)
 for i in range(2):
-    st.text_input(
-        f"Action {i+1}",
-        key=f"action_{i}",
-        on_change=persist,
-    )
+    st.text_input(f"Action {i+1}", key=f"action_{i}", on_change=persist)
 
-
-# Action 3~4 (접기)
 with st.expander("Action 3~4 (펼치기)", expanded=False):
     for i in range(2, 4):
-        st.text_input(
-            f"Action {i+1}",
-            key=f"action_{i}",
-            on_change=persist,
-        )
-
+        st.text_input(f"Action {i+1}", key=f"action_{i}", on_change=persist)
 
 st.subheader("종목 입력 (비중은 숫자만)")
 
 def row_editor(i: int, optional: bool):
     c1, c2, c3 = st.columns([2, 1, 3])
-    r = st.session_state.rows[i]
 
     name_label = f"종목{i+1}" + ("(선택)" if optional else "")
     pct_label  = f"비중변경{i+1}" + ("(선택)" if optional else "")
     rule_label = f"매수/매도 기준{i+1}" + ("(선택)" if optional else "")
 
-    name = c1.text_input(name_label, value=r["name"], key=f"name_{i}", on_change=persist)
-    pct_num = c2.number_input(
-        pct_label,
-        value=float(r["pct"]),
-        step=float(1.0),
-        format="%.0f",
-        key=f"pct_{i}",
-        on_change=persist,
-    )
-    rule = c3.text_input(rule_label, value=r["rule"], key=f"rule_{i}", on_change=persist)
+    c1.text_input(name_label, key=f"name_{i}", on_change=persist)
+    c2.number_input(pct_label, step=float(1.0), format="%.0f", key=f"pct_{i}", on_change=persist)
+    c3.text_input(rule_label, key=f"rule_{i}", on_change=persist)
 
 row_editor(0, optional=False)
 row_editor(1, optional=False)
@@ -540,7 +449,9 @@ with st.expander("종목 3~4 (선택) 입력 펼치기", expanded=False):
     row_editor(2, optional=True)
     row_editor(3, optional=True)
 
-# 현재 상태 구성
+# 현재 상태 구성(위젯 값에서 직접)
+actions_now = [st.session_state.get(f"action_{i}", "") for i in range(4)]
+
 rows_all: List[Row] = []
 for i in range(4):
     name = (st.session_state.get(f"name_{i}", "") or "").strip()
@@ -551,13 +462,12 @@ for i in range(4):
 final_rows: List[Row] = []
 final_rows.append(rows_all[0] if rows_all[0].name.strip() else Row("종목1", rows_all[0].pct, rows_all[0].rule))
 final_rows.append(rows_all[1] if rows_all[1].name.strip() else Row("종목2", rows_all[1].pct, rows_all[1].rule))
-
 for r in rows_all[2:]:
     has_any = (r.name.strip() != "") or (abs(r.pct) > 0.0) or (r.rule.strip() != "")
     if has_any:
         final_rows.append(Row(r.name.strip() or "종목", r.pct, r.rule))
 
-current = State(actions=st.session_state.actions[:4], rows=final_rows)
+current = State(actions=actions_now[:4], rows=final_rows)
 
 # ===== 미리보기 =====
 st.subheader("미리보기 (PNG 기반)")
@@ -566,17 +476,13 @@ st.image(img)
 
 buf = BytesIO()
 img.save(buf, format="PNG")
-st.download_button(
-    "PNG 다운로드",
-    data=buf.getvalue(),
-    file_name="dashboard.png",
-    mime="image/png",
-)
+st.download_button("PNG 다운로드", data=buf.getvalue(), file_name="dashboard.png", mime="image/png")
 
 # ===== 복사용 텍스트 =====
 st.subheader("복사용 텍스트")
-lines = []
 now = datetime.now(ZoneInfo("Asia/Seoul"))
+
+lines = []
 lines.append(f"{now.month}/{now.day} {TITLE_SUFFIX}")
 lines.append("")
 actions_txt = [a for a in current.actions if a.strip()]
@@ -590,6 +496,5 @@ for r in current.rows:
     lines.append(f"- {r.name} | {format_pct_text(r.pct)} | {action_from_sign(r.pct)} | {r.rule}")
 
 copy_text = "\n".join(lines)
-
 st.code(copy_text, language="text")
 st.text_area("길게 눌러 복사(모바일용)", value=copy_text, height=180)
