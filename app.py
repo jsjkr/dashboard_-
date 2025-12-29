@@ -388,8 +388,32 @@ html, body, [class*="css"]  {
     unsafe_allow_html=True,
 )
 
-# 세션 상태에 폼 키 세팅(한 번만)
-def ensure_session_keys():
+require_login()
+
+localS = LocalStorage()
+
+# 1) 첫 진입 시 localStorage에서 상태 로드(있으면)
+if "initialized" not in st.session_state:
+    st.session_state.initialized = True
+    loaded = try_load_from_local_storage(localS)
+    st.session_state.loaded_state = loaded  # None 가능
+
+# 기본값(원 코드 동일)
+default_actions = ["오늘 대응 요약 1", "오늘 대응 요약 2", "", ""]
+default_rows = [
+    Row(name="셀트리온제약", pct=-50.0, rule="예: 시장가"),
+    Row(name="에이비온", pct=50.0, rule="예: 2900 이내 분할"),
+    Row(name="", pct=0.0, rule=""),
+    Row(name="", pct=0.0, rule=""),
+]
+
+init_state = st.session_state.loaded_state if st.session_state.loaded_state is not None else State(
+    actions=default_actions,
+    rows=default_rows,
+)
+
+# ✅ init_state 만든 뒤에 session_state 키 초기화
+def ensure_session_keys(init_state: State):
     if "actions" not in st.session_state:
         st.session_state.actions = init_state.actions[:]
 
@@ -400,7 +424,7 @@ def ensure_session_keys():
         rows4 = rows4[:4]
         st.session_state.rows = [asdict(r) for r in rows4]
 
-    # ✅ 위젯 키 초기화(이게 있어야 위젯이 "actions/rows"와 동기화됨)
+    # 위젯 키 초기화(동기화)
     for i in range(4):
         st.session_state.setdefault(f"action_{i}", st.session_state.actions[i])
 
@@ -409,9 +433,7 @@ def ensure_session_keys():
         st.session_state.setdefault(f"pct_{i}", float(st.session_state.rows[i]["pct"]))
         st.session_state.setdefault(f"rule_{i}", st.session_state.rows[i]["rule"])
 
-require_login()
-ensure_session_keys()
-localS = LocalStorage()
+ensure_session_keys(init_state)
 
 # 1) 첫 진입 시 localStorage에서 상태 로드(있으면)
 if "initialized" not in st.session_state:
