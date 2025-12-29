@@ -10,7 +10,7 @@ from typing import Optional, List, Tuple
 import streamlit as st
 from PIL import Image, ImageDraw, ImageFont
 
-from streamlit_local_storage import LocalStorage  # pip install streamlit-local-storage
+from streamlit_local_storage import LocalStorage
 
 
 # =========================
