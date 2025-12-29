@@ -207,7 +207,7 @@ def render_dashboard_png(state: State) -> Image.Image:
         font_h     = ImageFont.truetype(bold_path, 22)   # 헤더/강조
         font_rule  = ImageFont.truetype(bold_path, 18)
         font       = ImageFont.truetype(reg_path, 18)    # 일반 텍스트
-        return font_title, font_h, font_rule font
+        return font_title, font_h, font_rule, font
 
     def load_icon():
         base = os.path.dirname(os.path.abspath(__file__))
